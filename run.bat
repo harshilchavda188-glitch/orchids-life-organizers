@@ -1,53 +1,38 @@
 @echo off
 setlocal enabledelayedexpansion
-title Smart Life - One Click Launcher
+title Orchid's Life Organizer - Launcher
 cd /d "%~dp0"
-
-set "PID_FILE=%temp%\smartlife_pids.txt"
-set "NEXT_PORT=3000"
-set "PHP_PORT=8000"
-
-if exist "%PID_FILE%" del "%PID_FILE%"
 
 color 0A
 echo ============================================
-echo    Smart Life - Orchid's Life Organizer
-echo    One-Click Launcher
+echo    Orchid's Life Organizer - Launcher
 echo ============================================
 echo.
 
 :menu
-echo Select services to start:
+echo Select an option:
 echo.
-echo  [1] All services (PHP API + Next.js + Expo)
-echo  [2] Web only (Next.js)
-echo  [3] Web + PHP API
-echo  [4] Web + Expo Mobile
-echo  [5] Exit
+echo  [1] Install all dependencies
+echo  [2] Run full project (Frontend + Backend + Expo + Database)
+echo  [3] Exit
 echo.
 set choice=
-set /p choice="Enter choice [1-5]: "
-if "%choice%"=="" set choice=1
+set /p choice="Enter choice [1-3]: "
+if "%choice%"=="" set choice=2
 
-set START_PHP=0
-set START_EXPO=0
-set START_NEXT=0
+if "%choice%"=="1" goto install
+if "%choice%"=="2" goto run
+if "%choice%"=="3" goto :eof
 
-if "%choice%"=="1" set START_PHP=1&set START_EXPO=1&set START_NEXT=1
-if "%choice%"=="2" set START_NEXT=1
-if "%choice%"=="3" set START_PHP=1&set START_NEXT=1
-if "%choice%"=="4" set START_EXPO=1&set START_NEXT=1
-if "%choice%"=="5" goto :eof
+echo Invalid choice. Please try again.
+timeout /t 2 /nobreak >nul
+goto menu
 
-if %START_NEXT%%START_PHP%%START_EXPO%==000 (
-    echo Invalid choice. Please try again.
-    timeout /t 2 /nobreak >nul
-    goto menu
-)
-
+:: ====== INSTALL ALL DEPENDENCIES ======
+:install
 echo.
 echo ============================================
-echo    Pre-flight checks...
+echo    Installing all dependencies...
 echo ============================================
 echo.
 
@@ -60,34 +45,66 @@ if %errorlevel% neq 0 (
 )
 echo [OK] Node.js found
 
-:: Check ports
-if %START_NEXT%==1 (
-    netstat -ano | findstr ":%NEXT_PORT% " >nul 2>&1
-    if !errorlevel! equ 0 (
-        echo [WARN] Port %NEXT_PORT% is already in use. Next.js may fail.
-    ) else (
-        echo [OK] Port %NEXT_PORT% is available
+:: Install root dependencies
+echo.
+echo [1/2] Installing web (Next.js) dependencies...
+if exist "node_modules" (
+    echo [SKIP] node_modules already exists. Delete it first if you want to reinstall.
+) else (
+    call npm install
+    if %errorlevel% neq 0 (
+        echo [FAIL] npm install failed
+        pause
+        exit /b 1
     )
+    echo [OK] Web dependencies installed
 )
 
-if %START_PHP%==1 (
-    where php >nul 2>&1
+:: Install mobile dependencies
+echo.
+echo [2/2] Installing mobile (Expo) dependencies...
+if exist "mobile\node_modules" (
+    echo [SKIP] mobile/node_modules already exists. Delete it first if you want to reinstall.
+) else (
+    pushd mobile
+    call npm install
     if !errorlevel! neq 0 (
-        echo [WARN] PHP not found - skipping PHP API server
-        set START_PHP=0
-    ) else (
-        netstat -ano | findstr ":%PHP_PORT% " >nul 2>&1
-        if !errorlevel! equ 0 (
-            echo [WARN] Port %PHP_PORT% is already in use. PHP API may fail.
-        ) else (
-            echo [OK] Port %PHP_PORT% is available
-        )
+        echo [FAIL] Mobile dependencies install failed
+        popd
+        pause
+        exit /b 1
     )
+    popd
+    echo [OK] Mobile dependencies installed
 )
 
-:: Install root dependencies if needed
+echo.
+echo ============================================
+echo    All dependencies installed successfully!
+echo ============================================
+echo.
+pause
+goto menu
+
+:: ====== RUN FULL PROJECT ======
+:run
+echo.
+echo ============================================
+echo    Starting full project...
+echo ============================================
+echo.
+
+:: Check Node.js
+where node >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [FAIL] Node.js is NOT installed. Install from https://nodejs.org
+    pause
+    exit /b 1
+)
+echo [OK] Node.js found
+
+:: Install dependencies if missing
 if not exist "node_modules" (
-    echo.
     echo [....] Installing web dependencies...
     call npm install
     if %errorlevel% neq 0 (
@@ -98,7 +115,22 @@ if not exist "node_modules" (
     echo [OK] Web dependencies installed
 )
 
+if not exist "mobile\node_modules" (
+    echo [....] Installing mobile dependencies...
+    pushd mobile
+    call npm install
+    if !errorlevel! neq 0 (
+        echo [FAIL] Mobile dependencies install failed
+        popd
+        pause
+        exit /b 1
+    )
+    popd
+    echo [OK] Mobile dependencies installed
+)
+
 :: Run database migration
+echo.
 echo [....] Setting up database...
 call npx tsx src/lib/db/migrate.ts
 if %errorlevel% neq 0 (
@@ -107,22 +139,11 @@ if %errorlevel% neq 0 (
     echo [OK] Database ready
 )
 
-:: Install mobile dependencies if needed
-if %START_EXPO%==1 (
-    if not exist "mobile\node_modules" (
-        echo [....] Installing mobile dependencies...
-        pushd mobile
-        call npm install
-        if !errorlevel! neq 0 (
-            echo [WARN] Mobile dependencies install failed, continuing..."
-        ) else (
-            echo [OK] Mobile dependencies installed
-        )
-        popd
-    )
-)
+:: Create logs directory
+if not exist logs mkdir logs
 
 :: Kill any leftover processes from previous run
+set "PID_FILE=%temp%\orchids_pids.txt"
 if exist "%PID_FILE%" (
     for /f "usebackq tokens=*" %%p in ("%PID_FILE%") do (
         taskkill /f /pid %%p >nul 2>&1
@@ -136,39 +157,29 @@ echo    Starting services...
 echo ============================================
 echo.
 
-:: 1. PHP API backend
-if %START_PHP%==1 (
-    start "Smart Life - PHP API" /MIN cmd /c "title Smart Life - PHP API && php -S localhost:%PHP_PORT% -t api api/index.php > logs\php_api.log 2>&1"
-    if not exist logs mkdir logs
-    echo [1/3] [OK] PHP API started  ^> http://localhost:%PHP_PORT%
-    echo PHP_API:!errorlevel! >> "%PID_FILE%"
+:: 1. Database (SQLite via Drizzle) - runs as part of Next.js
+:: 2. Backend PHP API
+where php >nul 2>&1
+if %errorlevel% equ 0 (
+    start "Orchid - PHP API" /MIN cmd /c "title Orchid - PHP API && php -S localhost:8000 -t api api/index.php > logs\php_api.log 2>&1"
+    echo [1/4] [OK] PHP API started   ^> http://localhost:8000
 ) else (
-    echo [1/3] [SKIP] PHP API
+    echo [1/4] [SKIP] PHP API (PHP not found)
 )
 
-:: 2. Expo Mobile app
-if %START_EXPO%==1 (
-    if not exist logs mkdir logs
-    start "Smart Life - Expo" /MIN cmd /c "title Smart Life - Expo && cd /d "%~dp0mobile" && npx expo start --tunnel > ..\logs\expo.log 2>&1"
-    timeout /t 3 /nobreak >nul
-    echo [2/3] [OK] Expo started  ^> Check expo terminal or log
-) else (
-    echo [2/3] [SKIP] Expo Mobile
-)
+:: 3. Expo Mobile app
+start "Orchid - Expo" /MIN cmd /c "title Orchid - Expo && cd /d "%~dp0mobile" && npx expo start --tunnel > ..\logs\expo.log 2>&1"
+timeout /t 3 /nobreak >nul
+echo [2/4] [OK] Expo Mobile started  ^> Check logs\expo.log
 
-:: 3. Next.js (Frontend + API Backend)
-if %START_NEXT%==1 (
-    if not exist logs mkdir logs
-    start "Smart Life - Next.js" /MIN cmd /c "title Smart Life - Next.js && cd /d "%~dp0" && npx next dev --turbopack > logs\nextjs.log 2>&1"
-    timeout /t 5 /nobreak >nul
-    echo [3/3] [OK] Next.js started  ^> http://localhost:%NEXT_PORT%
-    echo NEXT:!errorlevel! >> "%PID_FILE%"
-) else (
-    echo [3/3] [SKIP] Next.js
-)
+:: 4. Next.js (Frontend + Backend)
+start "Orchid - Next.js" /MIN cmd /c "title Orchid - Next.js && cd /d "%~dp0" && npx next dev --turbopack > logs\nextjs.log 2>&1"
+timeout /t 5 /nobreak >nul
+echo [3/4] [OK] Next.js started      ^> http://localhost:3000
+echo [4/4] [OK] Database ready       ^> SQLite (smartlife.db)
 
-:: Collect PIDs of started windows
-for /f "skip=3 tokens=2" %%a in ('tasklist /v /fi "WINDOWTITLE eq Smart Life - *" /fo csv 2^>nul') do (
+:: Collect PIDs
+for /f "skip=3 tokens=2" %%a in ('tasklist /v /fi "WINDOWTITLE eq Orchid - *" /fo csv 2^>nul') do (
     set "pid=%%~a"
     if not "!pid!"=="" (
         echo !pid!>> "%PID_FILE%"
@@ -180,24 +191,17 @@ echo ============================================
 echo    ALL SERVICES RUNNING
 echo ============================================
 echo.
-echo    PID file: %PID_FILE%
-echo.
-
-if %START_NEXT%==1 echo    Frontend + API:  http://localhost:%NEXT_PORT%
-if %START_PHP%==1  echo    PHP API:         http://localhost:%PHP_PORT%
-if %START_EXPO%==1 echo    Expo (Mobile):   Check logs\expo.log or Expo terminal
-echo.
-echo    Logs: .\logs\*.log
+echo    Frontend + API:  http://localhost:3000
+echo    PHP API:         http://localhost:8000
+echo    Expo (Mobile):   Check logs\expo.log
+echo    Logs:            .\logs\*.log
 echo.
 echo    Press any key to STOP all services.
 echo ============================================
-echo.
 
-:: Auto-open browser for Next.js
-if %START_NEXT%==1 (
-    timeout /t 2 /nobreak >nul
-    start http://localhost:%NEXT_PORT%
-)
+:: Auto-open browser
+timeout /t 2 /nobreak >nul
+start http://localhost:3000
 
 :: Wait for key press, then clean up
 pause >nul
@@ -211,8 +215,8 @@ if exist "%PID_FILE%" (
     )
     del "%PID_FILE%" 2>nul
 )
-:: Also kill by window title as fallback
-taskkill /f /fi "WINDOWTITLE eq Smart Life - *" >nul 2>&1
+taskkill /f /fi "WINDOWTITLE eq Orchid - *" >nul 2>&1
 echo [OK] All services stopped.
 echo.
 pause
+goto menu
