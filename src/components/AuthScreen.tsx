@@ -4,6 +4,7 @@ import { useState, useCallback, useEffect } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { User } from "@/lib/hooks/use-auth";
 import { generateId } from "@/lib/types";
+import { api } from "@/lib/api-client";
 import {
   Eye,
   EyeOff,
@@ -74,30 +75,14 @@ export default function AuthScreen({ onAuth }: AuthScreenProps) {
       return setError("Password must be at least 6 characters");
 
     setIsLoading(true);
-    await new Promise((r) => setTimeout(r, 1200));
-
-    const stored = localStorage.getItem("smartlife_users");
-    const users: Record<string, { name: string; email: string; password: string }> =
-      stored ? JSON.parse(stored) : {};
-    const key = loginEmail.toLowerCase();
-    const found = users[key];
-
-    if (!found) {
-      setIsLoading(false);
-      return setError("No account found with this email. Please sign up first.");
+    try {
+      const res = await api.auth.login(loginEmail, loginPassword);
+      localStorage.setItem("smartlife_token", res.token);
+      localStorage.setItem("smartlife_auth_user", JSON.stringify(res.user));
+      onAuth(res.user);
+    } catch (e: any) {
+      setError(e.message || "Login failed. Please try again.");
     }
-    if (found.password !== loginPassword) {
-      setIsLoading(false);
-      return setError("Incorrect password. Please try again.");
-    }
-
-    onAuth({
-      id: generateId(),
-      name: found.name,
-      email: found.email,
-      authMethod: "email",
-      createdAt: new Date().toISOString(),
-    });
     setIsLoading(false);
   }, [loginEmail, loginPassword, onAuth]);
 
@@ -114,32 +99,14 @@ export default function AuthScreen({ onAuth }: AuthScreenProps) {
       return setError("Passwords do not match");
 
     setIsLoading(true);
-    await new Promise((r) => setTimeout(r, 1200));
-
-    const stored = localStorage.getItem("smartlife_users");
-    const users: Record<string, { name: string; email: string; password: string }> =
-      stored ? JSON.parse(stored) : {};
-    const key = signupEmail.toLowerCase();
-
-    if (users[key]) {
-      setIsLoading(false);
-      return setError("An account with this email already exists. Please log in.");
+    try {
+      const res = await api.auth.register(signupName, signupEmail, signupPassword);
+      localStorage.setItem("smartlife_token", res.token);
+      localStorage.setItem("smartlife_auth_user", JSON.stringify(res.user));
+      onAuth(res.user);
+    } catch (e: any) {
+      setError(e.message || "Signup failed. Please try again.");
     }
-
-    users[key] = {
-      name: signupName.trim(),
-      email: signupEmail.trim(),
-      password: signupPassword,
-    };
-    localStorage.setItem("smartlife_users", JSON.stringify(users));
-
-    onAuth({
-      id: generateId(),
-      name: signupName.trim(),
-      email: signupEmail.trim(),
-      authMethod: "email",
-      createdAt: new Date().toISOString(),
-    });
     setIsLoading(false);
   }, [signupName, signupEmail, signupPassword, signupConfirm, onAuth]);
 

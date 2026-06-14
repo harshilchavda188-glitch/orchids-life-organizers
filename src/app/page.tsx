@@ -71,7 +71,7 @@ export default function App() {
       case "home":
         return (
           <Dashboard
-            onNavigate={setActiveTab}
+            onNavigate={(tab) => setActiveTab(tab as Tab)}
             userName={user.name}
             onSignOut={signOut}
           />
